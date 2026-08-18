@@ -1,0 +1,80 @@
+name: astrolab CI
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["astrolab/**", ".github/workflows/astrolab-ci.yml"]
+  pull_request:
+    paths: ["astrolab/**", ".github/workflows/astrolab-ci.yml"]
+  schedule:
+    # Weekly live-archive check. Per docs/decisions/0004, per-PR tests run offline against
+    # pinned real data; this job is the deliberate place where upstream drift is detected,
+    # so an archive outage breaks a scheduled run rather than every contributor's PR.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: astrolab
+
+jobs:
+  checks:
+    name: lint, types, tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install (locked)
+        # --frozen: the lockfile is authoritative. If it does not satisfy pyproject, that is a
+        # failure to fix rather than to resolve around, since the lockfile hash goes into every
+        # run manifest as the environment's identity.
+        run: uv sync --frozen --extra dev
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format check
+        run: uv run ruff format --check .
+
+      - name: Types (strict on core/ and archives/)
+        run: uv run mypy
+
+      - name: Tests
+        # Network-marked tests are excluded by default; see the live-archive job below.
+        run: uv run pytest -q --cov=astrolab --cov-report=term-missing
+
+  live-archive:
+    name: live archive check
+    runs-on: ubuntu-latest
+    # Only on the schedule and on manual dispatch. These tests contact MAST, and running them
+    # per-PR would both hammer a shared community resource and make CI fail for reasons
+    # unrelated to the change under review.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install (locked)
+        run: uv sync --frozen --extra dev
+
+      - name: Live archive tests
+        # continue-on-error above: a red mark here means "investigate whether MAST changed",
+        # not "this commit is broken". Treating an upstream outage as a build failure is how
+        # teams learn to ignore red builds.
+        run: uv run pytest -q --run-network -m network

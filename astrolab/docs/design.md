@@ -1,6 +1,6 @@
 # astrolab — design
 
-**Status:** Phase 0, awaiting approval · **Date:** 2026-08-18
+**Status:** Phase 0 approved; Phase 1 built (see `docs/phase-1-status.md`) · **Date:** 2026-08-18
 
 ---
 
@@ -281,6 +281,7 @@ observation, and its manifest says so.
 | R5 | **Custom likelihood bugs** (§6.2). | Medium | Golden target must reproduce published parameters within uncertainty, plus `hypothesis` invariants and direct comparison to `batman` reference outputs. If the golden target fails, the pipeline is wrong — that is the point of it. |
 | R6 | **Archive instability / API drift** in `astroquery` and MAST. | Medium | Caching layer isolates it; pinned snapshot for CI; scheduled live-fetch job detects drift early (§7). |
 | R7 | **Rubin facts rest on secondary sources** — `rubinobservatory.org` and `lsst.org` are egress-blocked from this environment. | Low now, higher if Rubin work starts | Documented in `mission-status.md`. Re-verify from an unrestricted network before building anything Rubin-dependent. |
+| R9 | **Archive egress is blocked in the build environment.** MAST, the NASA Exoplanet Archive, and the Rubin sites are refused by an organization egress policy, so no live retrieval could be executed or verified. | High | Documented in `docs/phase-1-status.md` with the exact commands to finish the acceptance test elsewhere. Live paths are written and network-marked tests exist but are unexecuted; nothing is stubbed to hide the gap. **Blocks ADR-0004's pinned-data snapshot, and therefore Phase 2's golden target — worth resolving before Phase 2 rather than during it.** |
 | R8 | **Overconfident output.** The most dangerous failure is a confident-looking number the data does not support. | High | §5.5 `QualityFlag` mechanism; mandatory injection-recovery; trial-factor correction; convergence diagnostics gating writes. |
 
 ## 9. Phase plan (revised for depth-first)
@@ -288,10 +289,16 @@ observation, and its manifest says so.
 **Phase 0 — Plan.** ← *awaiting your approval.* Mission status verified (`docs/mission-status.md`),
 this design doc, ADR log seeded.
 
-**Phase 1 — Core + archives.** `core/` and `archives/` with content-addressed caching, provenance
-manifests, unit-aware IO, structured logging, and a working `astrolab query` CLI.
+**Phase 1 — Core + archives.** *(built; acceptance test half-complete — see
+`docs/phase-1-status.md`)* `core/` and `archives/` with content-addressed caching, provenance
+manifests, unit-aware types, structured logging, and a working `astrolab` CLI.
 *Done when:* a TESS light curve and a public JWST product can be pulled from MAST by target name,
 and the run manifest fully reproduces the query.
+
+The manifest half is done and demonstrated: `astrolab replay` reconstructs a recorded query and
+verifies it hashes to the value stored at run time. The retrieval half is **blocked by R9** —
+archive hosts are refused by this environment's egress policy. 135 tests pass, `mypy --strict`
+is clean, and the failure path was exercised end to end, but no live retrieval has occurred.
 
 **Phase 2 — Exoplanet transit vertical slice.** Raw → calibrated → detrended → searched → fitted →
 vetted → report. Includes the vetting gauntlet (odd/even, secondary eclipse, centroid shift,

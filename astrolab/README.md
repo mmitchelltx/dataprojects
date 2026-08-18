@@ -3,9 +3,15 @@
 Reproducible, provenance-tracked analysis of data from space-based observatories and public sky
 surveys.
 
-**Status: Phase 1 (core + archives) in progress.** See `docs/design.md` for the architecture and
-phase plan, `docs/decisions/` for why each non-obvious choice was made, and
-`docs/mission-status.md` for the verified state of the missions this toolkit targets.
+**Status: Phase 1 (core + archives) built; live retrieval unverified.** The archive hosts are
+blocked by an egress policy in the environment this was developed in, so no query has actually
+reached MAST. Everything else — 135 tests, `mypy --strict`, the provenance and replay path — was
+run and passes. See `docs/phase-1-status.md` for exactly what is and is not verified, and the
+commands to finish the acceptance test on an unrestricted network.
+
+See `docs/design.md` for the architecture and phase plan, `docs/decisions/` for why each
+non-obvious choice was made, and `docs/mission-status.md` for the verified state of the missions
+this toolkit targets.
 
 This project makes three promises, and the code exists to keep them:
 
