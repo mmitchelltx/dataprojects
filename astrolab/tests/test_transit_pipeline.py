@@ -183,6 +183,32 @@ class TestGoldenTargetSearch:
             "a candidate with no published counterpart carried no quality reservation"
         )
 
+    def test_real_planets_survive_the_depth_consistency_check(self, search, detrended_lc) -> None:
+        """Regression guard: genuine planets must not be flagged as systematics.
+
+        Earlier versions of check_transit_consistency failed K2-3 b at +9 sigma because the
+        null contained only photometric noise, while the real events carry a limb-darkened
+        transit whose sampling-phase variation at 29-minute cadence is several times larger.
+        This is the test that catches that class of mistake, because only a real shaped transit
+        exercises it -- a box injection cannot.
+        """
+        from astrolab.science.exoplanets.vetting import check_transit_consistency
+
+        assert search.best is not None
+        result = check_transit_consistency(detrended_lc, search.best)
+        assert result.passed is True, result.detail
+        # The null must sit well above a noise-only estimate, or it has stopped containing
+        # the signal.
+        assert result.metrics["null_median_ppm"] > detrended_lc.scatter.value * 1e6 * 0.5
+
+    def test_recovered_planets_are_labelled_known_objects(self, search, detrended_lc) -> None:
+        """Recovering a catalogued planet is success, and must not read as a false positive."""
+        from astrolab.science.exoplanets.vetting import vet_candidate
+
+        assert search.best is not None
+        report = vet_candidate(detrended_lc, search.best, target="K2-3")
+        assert report.disposition == "KNOWN_OBJECT"
+
     def test_quality_flags_propagate_from_ingestion(self, search) -> None:
         """The provenance caveat must reach the search result, not stop at the light curve."""
         assert search.quality.has(THIRD_PARTY_MIRROR)
