@@ -224,7 +224,10 @@ class Measurement:
                 name=f"({self.name} {symbol} {other})",
                 posterior_id=self.posterior_id,
             )
-        return NotImplemented  # type: ignore[unreachable]
+        raise TypeError(
+            f"cannot combine Measurement {self.name!r} with {type(other).__name__}; "
+            f"expected another Measurement, a Quantity, or a plain number"
+        )
 
     def __add__(self, other: Measurement | Quantity) -> Measurement:
         return self._binary(other, lambda a, b: a + b, "+")
@@ -343,16 +346,10 @@ class JointPosterior:
     def marginal(self, name: str) -> Measurement:
         """Extract one parameter as a :class:`Measurement`, tagged with this posterior's id."""
         if name not in self.samples:
-            raise KeyError(
-                f"{name!r} is not in this posterior; available: {sorted(self.samples)}"
-            )
-        return Measurement(
-            samples=self.samples[name], name=name, posterior_id=self.posterior_id
-        )
+            raise KeyError(f"{name!r} is not in this posterior; available: {sorted(self.samples)}")
+        return Measurement(samples=self.samples[name], name=name, posterior_id=self.posterior_id)
 
-    def derive(
-        self, name: str, func: Callable[..., Quantity], *parameters: str
-    ) -> Measurement:
+    def derive(self, name: str, func: Callable[..., Quantity], *parameters: str) -> Measurement:
         """Compute a derived quantity element-wise across the joint draws.
 
         This is the correlation-preserving operation. ``func`` is applied row by row (in
@@ -422,9 +419,7 @@ def from_gaussian(
     if float(sigma.value) < 0.0:
         raise ValueError(f"{name}: sigma must be non-negative, got {sigma}")
     rng = np.random.default_rng(seed)
-    draws = rng.normal(
-        float(value.value), float(sigma.to(value.unit).value), size=n_samples
-    )
+    draws = rng.normal(float(value.value), float(sigma.to(value.unit).value), size=n_samples)
     return Measurement(
         samples=Quantity(draws, value.unit),
         name=name,
@@ -460,9 +455,7 @@ def combine_independent(
         raise ValueError("combine_independent requires at least one Measurement")
     size = n_samples if n_samples is not None else min(m.samples.size for m in measurements)
     rng = np.random.default_rng(seed)
-    drawn = [
-        m.samples[rng.integers(0, m.samples.size, size=size)] for m in measurements
-    ]
+    drawn = [m.samples[rng.integers(0, m.samples.size, size=size)] for m in measurements]
     result = func(*drawn)
     if not isinstance(result, Quantity):
         raise TypeError(f"combine_independent({name!r}) must return a Quantity")

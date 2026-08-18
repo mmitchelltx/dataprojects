@@ -94,7 +94,13 @@ class GitState:
         return self.available and self.dirty is False
 
 
-def _git(args: list[str], cwd: Path) -> str | None:
+def _git(args: list[str], cwd: Path, *, strip: bool = True) -> str | None:
+    """Run a git command, returning stdout or ``None`` if git could not answer.
+
+    ``strip`` must be False for ``status --porcelain``: its first column is a space for
+    worktree-only modifications, so stripping the whole output shifts every filename by one
+    character and silently corrupts the dirty-file list.
+    """
     try:
         out = subprocess.run(
             ["git", *args],
@@ -108,7 +114,7 @@ def _git(args: list[str], cwd: Path) -> str | None:
         return None
     if out.returncode != 0:
         return None
-    return out.stdout.strip()
+    return out.stdout.strip() if strip else out.stdout.rstrip("\n")
 
 
 def git_state(repo_root: str | Path | None = None) -> GitState:
@@ -129,7 +135,7 @@ def git_state(repo_root: str | Path | None = None) -> GitState:
             "produced this run cannot be identified from the manifest",
         )
     branch = _git(["rev-parse", "--abbrev-ref", "HEAD"], root)
-    status = _git(["status", "--porcelain"], root)
+    status = _git(["status", "--porcelain"], root, strip=False)
     if status is None:
         return GitState(
             available=True,

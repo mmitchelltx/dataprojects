@@ -68,8 +68,7 @@ class RunConfig(_Base):
     def _name_is_path_safe(cls, v: str) -> str:
         if not v or any(c in v for c in '/\\:*?"<>| '):
             raise ValueError(
-                f"run.name must be a non-empty path-safe token (no spaces or separators), "
-                f"got {v!r}"
+                f"run.name must be a non-empty path-safe token (no spaces or separators), got {v!r}"
             )
         return v
 
@@ -106,9 +105,7 @@ class TargetConfig(_Base):
     def _needs_name_or_coords(self) -> TargetConfig:
         has_coords = self.ra_deg is not None and self.dec_deg is not None
         if self.name is None and not has_coords:
-            raise ValueError(
-                "target requires either 'name' or both 'ra_deg' and 'dec_deg'"
-            )
+            raise ValueError("target requires either 'name' or both 'ra_deg' and 'dec_deg'")
         if (self.ra_deg is None) != (self.dec_deg is None):
             raise ValueError("target coordinates require both 'ra_deg' and 'dec_deg'")
         return self
@@ -233,7 +230,8 @@ class AstrolabConfig(_Base):
         the file as written is the point: a default that changes between versions would
         otherwise silently change a result while the config file on disk looked untouched.
         """
-        return json.loads(self.model_dump_json())
+        resolved: dict[str, Any] = json.loads(self.model_dump_json())
+        return resolved
 
     def content_hash(self) -> str:
         """Stable hash of the resolved configuration.

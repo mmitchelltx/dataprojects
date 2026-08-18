@@ -102,9 +102,7 @@ class QualityReport:
     ) -> None:
         """Record a reservation about the result."""
         self.flags.append(
-            QualityFlag(
-                flag=Flag(flag), severity=severity, message=message, context=dict(context)
-            )
+            QualityFlag(flag=Flag(flag), severity=severity, message=message, context=dict(context))
         )
 
     @property

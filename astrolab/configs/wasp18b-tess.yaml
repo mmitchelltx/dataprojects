@@ -1,0 +1,39 @@
+# WASP-18 b -- TESS light curve retrieval.
+#
+# Phase 2's golden target. A hot Jupiter with P ~ 0.94 d and a deep transit, so a single
+# TESS sector contains many transits and the whole benchmark is one small download.
+#
+# Published TESS-derived parameters for comparison come from Shporer et al. 2019
+# (TESS full orbital phase curve of the WASP-18b system), AJ 157, 178.
+# doi:10.3847/1538-3881/ab0f96 -- Rp/Rs = 0.09716 +/- 0.00014.
+
+run:
+  name: wasp18b-tess
+  description: Retrieve public TESS 2-minute SPOC light curves for WASP-18.
+  seed: 20260818
+  output_dir: outputs
+
+target:
+  name: WASP-18
+  # Coordinates stated alongside the name deliberately: they are a check on name
+  # resolution, not a duplicate of it. A name silently resolving to the wrong object is a
+  # real and recurring failure mode. ICRS, from SIMBAD.
+  ra_deg: 24.354292
+  dec_deg: -45.677891
+  search_radius_arcsec: 20.0
+
+query:
+  archive: mast
+  mission: TESS
+  product: lightcurve
+  # SPOC rather than QLP: SPOC light curves carry the systematics corrections and quality
+  # flags the transit-fitting stage expects. Mixing authors in one analysis mixes
+  # systematics treatments, which is why this is pinned rather than left open.
+  author: SPOC
+  exptime_seconds: 120
+  include_proprietary: false
+
+cache:
+  enabled: true
+  # No max_age_days: entries never expire. Refreshing against a reprocessed archive should
+  # be a deliberate, reviewed act, not something that happens silently mid-analysis.

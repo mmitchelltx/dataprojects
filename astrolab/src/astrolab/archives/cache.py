@@ -186,7 +186,7 @@ class QueryCache:
             "spec_hash": spec.content_hash(),
             "fetched_at": fetched_at or _utcnow(),
             "written_at": _utcnow(),
-            "n_rows": int(len(table)),
+            "n_rows": len(table),
             **extra,
         }
 

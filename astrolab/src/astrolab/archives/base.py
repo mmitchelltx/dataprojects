@@ -89,11 +89,16 @@ class QuerySpec:
 
     def __post_init__(self) -> None:
         try:
-            json.dumps(self.params, sort_keys=True, default=str)
+            # No ``default=`` fallback: a coercion here would silently accept a value whose
+            # JSON form is not stable. A set, for instance, would stringify in whatever order
+            # the interpreter happened to iterate it, making the content hash non-deterministic
+            # across runs -- which would quietly break both caching and replay.
+            json.dumps(self.params, sort_keys=True)
         except (TypeError, ValueError) as exc:
             raise TypeError(
                 f"QuerySpec params must be JSON-serialisable so the query can be recorded and "
-                f"replayed; got {self.params!r}"
+                f"replayed exactly; got {self.params!r}. Convert Paths, sets, and objects to "
+                f"plain JSON types at the call site, where the intended representation is known."
             ) from exc
 
     def canonical(self) -> str:
@@ -113,7 +118,6 @@ class QuerySpec:
             },
             sort_keys=True,
             separators=(",", ":"),
-            default=str,
         )
 
     def content_hash(self) -> str:
@@ -131,7 +135,26 @@ class QuerySpec:
         return f"{self.archive}.{self.operation}({inner}) [{self.short_hash}]"
 
     def to_dict(self) -> dict[str, Any]:
-        return json.loads(self.canonical())
+        parsed: dict[str, Any] = json.loads(self.canonical())
+        return parsed
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> QuerySpec:
+        """Rebuild a spec from its recorded form, for replaying a run from its manifest.
+
+        Round-trips exactly: ``QuerySpec.from_dict(spec.to_dict()).content_hash()`` equals
+        ``spec.content_hash()``. That identity is what makes a manifest a reproduction recipe
+        rather than a description, and it is asserted by the test suite.
+        """
+        missing = {"archive", "operation", "params"} - set(data)
+        if missing:
+            raise ValueError(f"cannot rebuild QuerySpec, missing keys: {sorted(missing)}")
+        return cls(
+            archive=str(data["archive"]),
+            operation=str(data["operation"]),
+            params=dict(data["params"]),
+            client_version=str(data.get("client_version", "1")),
+        )
 
 
 @dataclass
