@@ -93,6 +93,7 @@ def detrend(
     expected_duration: Quantity,
     window_durations: float = DEFAULT_WINDOW_DURATIONS,
     method: str = "biweight",
+    rescale_estimated_uncertainties: bool = True,
 ) -> DetrendResult:
     """Detrend a light curve for the *search* stage.
 
@@ -114,6 +115,17 @@ def detrend(
     method
         A `wotan` method name. ``"biweight"`` is the default for the reason given in the
         module docstring.
+    rescale_estimated_uncertainties
+        Whether to re-derive per-point uncertainties from the *detrended* residual scatter when
+        the input's uncertainties were themselves estimated rather than measured.
+
+        This matters more than it sounds. An uncertainty estimated from a raw light curve's
+        scatter is measuring stellar variability, not photometric precision: for the bundled
+        K2-3 data that is 3052 ppm against a true point-to-point scatter of 51 ppm, a factor of
+        60. Carrying it through detrending leaves every downstream likelihood nearly flat, and
+        a transit fit then reports a real planet as weak evidence with a depth uncertainty
+        larger than the depth. Uncertainties that were measured by the mission pipeline are
+        never touched.
 
     Returns
     -------
@@ -151,19 +163,36 @@ def detrend(
     good = np.isfinite(flat) & np.isfinite(trend)
     n_masked = int((~good).sum())
 
+    # Scaling by the trend keeps the uncertainties relative to the same normalisation as the
+    # flux, which is what a subsequent chi-square needs.
+    flux_err = lc.flux_err.value / np.where(trend > 0, trend, np.nan)
+
+    residual_scatter = float(1.4826 * np.nanmedian(np.abs(flat - np.nanmedian(flat))))
+    rescaled_from: float | None = None
+    if rescale_estimated_uncertainties and lc.quality.has("estimated_uncertainties"):
+        rescaled_from = float(np.nanmedian(flux_err))
+        flux_err = np.full_like(flux_err, residual_scatter)
+
     detrended = LightCurve(
         time=lc.time,
         flux=flat * u.dimensionless_unscaled,
-        # The filter estimates a baseline; it does not measure the noise. Scaling the
-        # uncertainties by the trend keeps them relative to the same normalisation as the
-        # flux, which is what a subsequent chi-square needs.
-        flux_err=(lc.flux_err.value / np.where(trend > 0, trend, np.nan))
-        * u.dimensionless_unscaled,
+        flux_err=flux_err * u.dimensionless_unscaled,
         epoch_ref=lc.epoch_ref,
         meta=dict(lc.meta),
         provenance=dict(lc.provenance),
     )
     detrended.quality.extend(lc.quality)
+    if rescaled_from is not None:
+        detrended.quality.add(
+            "uncertainties_rescaled",
+            Severity.INFO,
+            f"Per-point uncertainties were re-estimated from the detrended residual scatter "
+            f"({residual_scatter * 1e6:.1f} ppm), replacing an estimate made from the raw light "
+            f"curve ({rescaled_from * 1e6:.1f} ppm) that was dominated by stellar variability "
+            f"rather than photometric precision. They remain estimated, not measured.",
+            before_ppm=rescaled_from * 1e6,
+            after_ppm=residual_scatter * 1e6,
+        )
 
     history = list(detrended.provenance.get("history", []))
     history.append(
@@ -175,6 +204,9 @@ def detrend(
             "expected_duration_days": float(duration.value),
             "n_masked": n_masked,
             "scatter_before_ppm": scatter_before,
+            "uncertainty_rescaled_from_ppm": (
+                None if rescaled_from is None else rescaled_from * 1e6
+            ),
             "scatter_after_ppm": float(
                 1.4826 * np.nanmedian(np.abs(flat - np.nanmedian(flat))) * 1e6
             ),

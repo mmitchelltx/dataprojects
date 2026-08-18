@@ -68,11 +68,32 @@ log = get_logger(__name__)
 #: the NASA Exoplanet Archive, VSX, and SIMBAD, which is what a real novelty claim requires;
 #: it exists so the cross-match step does something real in an offline environment while
 #: reporting honestly that its coverage is a handful of systems rather than a catalogue.
+#:
+#: Entries carry a ``verification`` field for the same reason the golden targets do: the K2-3 b
+#: period was checked against a retrievable source, the c and d periods were not (arXiv, IOP,
+#: Wikipedia and the NASA Exoplanet Archive are all blocked by this environment's egress
+#: policy). An unverified ephemeris is good enough to say "this looks like a known object" and
+#: not good enough to quote.
 KNOWN_EPHEMERIDES: dict[str, list[dict[str, Any]]] = {
     "K2-3": [
-        {"name": "K2-3 b", "period_days": 10.05403, "source": "Crossfield et al. 2015"},
-        {"name": "K2-3 c", "period_days": 24.6454, "source": "Crossfield et al. 2015"},
-        {"name": "K2-3 d", "period_days": 44.5565, "source": "Crossfield et al. 2015"},
+        {
+            "name": "K2-3 b",
+            "period_days": 10.0546535,
+            "source": "Kosiarek et al. 2019, AJ 157, 97",
+            "verification": "sourced",
+        },
+        {
+            "name": "K2-3 c",
+            "period_days": 24.6454,
+            "source": "Crossfield et al. 2015, ApJ 804, 10",
+            "verification": "unverified",
+        },
+        {
+            "name": "K2-3 d",
+            "period_days": 44.5565,
+            "source": "Crossfield et al. 2015, ApJ 804, 10",
+            "verification": "unverified",
+        },
     ]
 }
 

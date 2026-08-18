@@ -169,7 +169,7 @@ class TestCentroidShift:
 
 class TestKnownEphemeris:
     def test_matches_a_known_planet(self) -> None:
-        test = check_known_ephemeris(candidate(period=10.05403), target="K2-3")
+        test = check_known_ephemeris(candidate(period=10.0546535), target="K2-3")
         assert test.passed is False
         assert test.metrics["matched"] == "K2-3 b"
         assert "recovery, not a discovery" in test.detail
@@ -205,7 +205,7 @@ class TestDisposition:
     def test_known_object_outranks_test_failures(self, base_lc: LightCurve) -> None:
         """Recovering a known planet is success, not a false positive."""
         lc = inject(base_lc, odd_depth=DEPTH, even_depth=DEPTH)
-        report = vet_candidate(lc, candidate(period=10.05403), target="K2-3")
+        report = vet_candidate(lc, candidate(period=10.0546535), target="K2-3")
         assert report.disposition == "KNOWN_OBJECT"
 
     def test_failed_astrophysical_test_gives_false_positive(self, base_lc: LightCurve) -> None:

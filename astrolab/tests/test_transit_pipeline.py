@@ -19,7 +19,7 @@ from astrolab.science.exoplanets.detrend import detrend, estimate_depth_bias
 from astrolab.science.exoplanets.search import search_transits
 from astrolab.validation.targets import GOLDEN_TARGETS
 
-K2_3_B_PERIOD = 10.05403  # d, Crossfield et al. 2015
+K2_3_B_PERIOD = 10.0546535  # d, Kosiarek et al. 2019, AJ 157, 97
 TRANSIT_DURATION = 2.4 * u.hour
 
 
@@ -177,7 +177,7 @@ class TestGoldenTargetSearch:
         unpublished = [
             c
             for c in search.candidates
-            if abs(c.period.value - 10.05403) > 0.01 and abs(c.period.value - 24.6454) > 0.01
+            if abs(c.period.value - K2_3_B_PERIOD) > 0.01 and abs(c.period.value - 24.6454) > 0.01
         ]
         assert all(len(c.quality) > 0 for c in unpublished), (
             "a candidate with no published counterpart carried no quality reservation"
