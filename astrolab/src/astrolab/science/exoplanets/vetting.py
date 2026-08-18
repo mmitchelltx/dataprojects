@@ -608,14 +608,29 @@ def vet_candidate(
         )
     )
 
-    if report.failures:
+    # A catalogue match and an astrophysical failure are both recorded as passed=False, but
+    # they mean opposite things: one says "this is a known planet", the other says "this is
+    # not a planet". Treating a recovery as an UNRELIABLE result would make a successful
+    # benchmark run exit as though it had failed.
+    astrophysical_failures = [t for t in report.failures if t.name != "known_ephemeris"]
+    catalogue_match = [t for t in report.failures if t.name == "known_ephemeris"]
+
+    if catalogue_match:
+        report.quality.add(
+            "known_object",
+            Severity.INFO,
+            "Candidate matches a catalogued object: "
+            + "; ".join(t.detail for t in catalogue_match),
+            matched=[t.metrics.get("matched") for t in catalogue_match],
+        )
+    if astrophysical_failures:
         report.quality.add(
             "vetting_failure",
             Severity.UNRELIABLE,
             "Candidate failed "
-            + ", ".join(t.name for t in report.failures)
+            + ", ".join(t.name for t in astrophysical_failures)
             + ". It is not a planet candidate.",
-            failed_tests=[t.name for t in report.failures],
+            failed_tests=[t.name for t in astrophysical_failures],
         )
     if report.not_run:
         report.quality.add(

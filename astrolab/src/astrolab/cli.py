@@ -87,6 +87,8 @@ def _load_config(path: Path) -> AstrolabConfig:
 
 def _spec_from_config(cfg: AstrolabConfig) -> QuerySpec:
     """Translate a validated config into an archive query spec."""
+    if cfg.query is None:
+        raise ConfigError("config has no 'query' section; nothing to retrieve")
     if cfg.query.archive != "mast":
         raise ConfigError(f"archive {cfg.query.archive!r} is not implemented")
     return build_observation_spec(
@@ -129,10 +131,21 @@ def validate_config(
     _ok(f"config valid: {config}")
     typer.echo(f"  run:      {cfg.run.name}  (seed {cfg.run.seed})")
     typer.echo(f"  target:   {cfg.target.label}")
-    typer.echo(f"  query:    {cfg.query.mission} / {cfg.query.product}")
     typer.echo(f"  hash:     {cfg.content_hash()[:16]}")
-    spec = _spec_from_config(cfg)
-    typer.echo(f"  will run: {spec.describe()}")
+
+    # A config may describe an archive query, a pipeline run, or both. Report what is there
+    # rather than assuming one shape.
+    if cfg.query is not None:
+        typer.echo(f"  query:    {cfg.query.mission} / {cfg.query.product}")
+        typer.echo(f"  will run: {_spec_from_config(cfg).describe()}")
+    if cfg.source is not None and cfg.transit is not None:
+        typer.echo(f"  source:   {cfg.source.kind} ({cfg.source.variant})")
+        typer.echo(
+            f"  transit:  duration {cfg.transit.expected_duration_hours} h, "
+            f"search {cfg.transit.search.min_period_days}-"
+            f"{cfg.transit.search.max_period_days} d, "
+            f"fit {'on' if cfg.transit.fit.enabled else 'off'}"
+        )
 
 
 @app.command()
@@ -261,6 +274,84 @@ def _failed_record(
         n_results=n_results,
         error=error,
     )
+
+
+@app.command("run")
+def run_pipeline(
+    config: Annotated[Path, typer.Argument(help="Path to a run config YAML.")],
+    output_dir: Annotated[
+        Path | None,
+        typer.Option("--output-dir", "-o", help="Override run.output_dir from the config."),
+    ] = None,
+    no_fit: Annotated[
+        bool, typer.Option("--no-fit", help="Skip the fitting stage (much faster).")
+    ] = False,
+) -> None:
+    """Run the transit pipeline: ingest, detrend, search, vet, fit, report.
+
+    Writes a self-contained HTML report and a provenance manifest. Exits 5 if the results
+    carry an UNRELIABLE quality flag, so a caller cannot mistake a flagged result for a clean
+    one just because the process exited without an exception.
+    """
+    from astrolab.pipelines.report import write_report
+    from astrolab.pipelines.transit import run_transit_pipeline
+
+    cfg = _load_config(config)
+    if cfg.transit is None or cfg.source is None:
+        _err(
+            f"{config}: `astrolab run` needs both 'source' and 'transit' sections. "
+            f"This config only defines an archive query -- use `astrolab query` for that."
+        )
+        raise typer.Exit(EXIT_USAGE)
+
+    if no_fit:
+        cfg = cfg.model_copy(
+            update={
+                "transit": cfg.transit.model_copy(
+                    update={"fit": cfg.transit.fit.model_copy(update={"enabled": False})}
+                )
+            }
+        )
+
+    out_root = Path(output_dir) if output_dir else cfg.run.output_dir
+    run_dir = out_root / cfg.run.name
+
+    try:
+        result = run_transit_pipeline(cfg, output_dir=out_root)
+    except Exception as exc:
+        _err(f"pipeline failed: {exc}")
+        raise typer.Exit(EXIT_ARCHIVE) from exc
+
+    report_path = write_report(result, run_dir / "report.html")
+    result.manifest.record_output(report_path, kind="report")
+
+    summary_path = run_dir / "summary.json"
+    summary_path.write_text(json.dumps(result.summary(), indent=2, default=str))
+    result.manifest.record_output(summary_path, kind="summary")
+
+    manifest_path = result.manifest.write(run_dir / "manifest.json")
+
+    _status(f"{len(result.candidates)} candidate(s) found")
+    for i, vetting in enumerate(result.vetting, start=1):
+        typer.echo(
+            f"  {i}. P = {vetting.candidate.period.value:.5f} d  "
+            f"depth = {vetting.candidate.depth_ppm:.0f} ppm  -> {vetting.disposition}"
+        )
+    for fit in result.fits.values():
+        minus, plus = fit.period.uncertainty_asymmetric
+        typer.echo(
+            f"     fitted P = {fit.period.value.value:.6f} "
+            f"+{plus.value:.6f}/-{minus.value:.6f} d, "
+            f"Rp/R* = {fit.radius_ratio.value.value:.5f}, "
+            f"ln BF = {fit.log_bayes_factor:.1f}"
+        )
+    typer.echo(f"report:   {report_path}", err=True)
+    typer.echo(f"manifest: {manifest_path}", err=True)
+
+    if result.quality.flags:
+        typer.secho(f"quality: {result.quality.summary_line()}", fg=typer.colors.YELLOW, err=True)
+
+    raise typer.Exit(EXIT_OK if result.quality.is_reliable else EXIT_UNRELIABLE)
 
 
 @app.command()

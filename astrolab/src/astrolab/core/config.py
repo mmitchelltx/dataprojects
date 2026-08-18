@@ -29,9 +29,14 @@ __all__ = [
     "AstrolabConfig",
     "CacheConfig",
     "ConfigError",
+    "DetrendConfig",
+    "FitConfig",
     "QueryConfig",
     "RunConfig",
+    "SearchConfig",
+    "SourceConfig",
     "TargetConfig",
+    "TransitConfig",
 ]
 
 
@@ -165,6 +170,119 @@ class QueryConfig(_Base):
     )
 
 
+class SourceConfig(_Base):
+    """Where the light curve comes from.
+
+    Separate from :class:`QueryConfig` because a data *source* and an archive *query* are
+    different things. Making the source an explicit, named choice is what lets a run be
+    reproduced without guessing whether a file on disk was the input or an intermediate.
+    """
+
+    kind: Literal["bundled_validation", "local_csv", "mast"] = Field(
+        description=(
+            "'bundled_validation' uses the packaged K2-3 benchmark light curve, whose "
+            "provenance limitations are recorded in validation/data/SOURCE.md. 'local_csv' "
+            "reads a two-column file. 'mast' retrieves from the archive."
+        )
+    )
+    path: Path | None = Field(
+        default=None, description="For 'local_csv': path to a time,flux file."
+    )
+    variant: Literal["raw", "detrended"] = Field(
+        default="raw",
+        description=(
+            "For 'bundled_validation'. Use 'raw': the 'detrended' variant was processed by an "
+            "undocumented external procedure, so a result computed from it is not reproducible."
+        ),
+    )
+    mission: Literal["K2", "Kepler", "TESS"] = Field(default="K2")
+    time_system: Literal["BKJD", "BTJD", "BJD"] = Field(default="BKJD")
+
+    @model_validator(mode="after")
+    def _local_csv_needs_a_path(self) -> SourceConfig:
+        if self.kind == "local_csv" and self.path is None:
+            raise ValueError("source.kind='local_csv' requires 'path'")
+        return self
+
+
+class DetrendConfig(_Base):
+    """Search-stage detrending. See docs/decisions/0003-two-stage-detrending.md."""
+
+    method: str = Field(default="biweight", description="A wotan method name.")
+    window_durations: float = Field(
+        default=3.0,
+        gt=0.0,
+        description=(
+            "Filter window in units of the expected transit duration. Below about 2 the filter "
+            "eats the transit; measured on the benchmark, 3 costs 0.2% of depth and 2 costs 95%."
+        ),
+    )
+
+
+class SearchConfig(_Base):
+    """Periodogram search settings."""
+
+    min_period_days: float = Field(default=2.0, gt=0.0)
+    max_period_days: float | None = Field(
+        default=None,
+        gt=0.0,
+        description=(
+            "Defaults to a third of the baseline: a longer 'period' cannot show enough "
+            "transits to be measured."
+        ),
+    )
+    sde_threshold: float = Field(default=8.0, gt=0.0)
+    max_candidates: int = Field(default=3, ge=1, le=10)
+    cross_check_bls: bool = Field(default=True)
+
+
+class FitConfig(_Base):
+    """Transit fitting settings. Priors are declared here, never defaulted in code."""
+
+    enabled: bool = Field(default=True)
+    n_live: int = Field(default=300, ge=50, description="Nested sampling live points.")
+    window_durations: float = Field(default=3.0, gt=0.0)
+    supersample: int = Field(
+        default=7,
+        ge=1,
+        description="Model evaluations per exposure; 1 disables the finite-exposure correction.",
+    )
+    sampler: str = Field(
+        default="rwalk",
+        description=(
+            "dynesty sampling method. 'rwalk' rather than the default: the transit posterior is "
+            "narrow and curved, and uniform sampling did not converge on the benchmark."
+        ),
+    )
+    max_candidates_to_fit: int = Field(default=1, ge=0)
+    prior_rp: tuple[float, float] = Field(default=(0.005, 0.3))
+    prior_a_rs: tuple[float, float] = Field(default=(2.0, 200.0))
+    prior_b: tuple[float, float] = Field(default=(0.0, 1.0))
+    prior_log_jitter: tuple[float, float] = Field(default=(-14.0, -6.0))
+    prior_period_fraction: float = Field(default=0.002, gt=0.0)
+    prior_t0_offset_days: float = Field(default=0.05, gt=0.0)
+
+
+class TransitConfig(_Base):
+    """The exoplanet transit pipeline."""
+
+    expected_duration_hours: float = Field(
+        gt=0.0,
+        description=(
+            "Expected transit duration. Required, with no default: the detrending window is "
+            "derived from it, and a window chosen without reference to the signal is the "
+            "depth-bias failure mode ADR-0003 exists to avoid."
+        ),
+    )
+    detrend: DetrendConfig = Field(default_factory=DetrendConfig)
+    search: SearchConfig = Field(default_factory=SearchConfig)
+    fit: FitConfig = Field(default_factory=FitConfig)
+    catalogue_target: str | None = Field(
+        default=None,
+        description="Key into the known-ephemeris table for the vetting cross-match.",
+    )
+
+
 class CacheConfig(_Base):
     """Content-addressed query cache settings."""
 
@@ -189,8 +307,27 @@ class AstrolabConfig(_Base):
 
     run: RunConfig
     target: TargetConfig
-    query: QueryConfig
+    query: QueryConfig | None = Field(
+        default=None, description="Archive query. Required for `astrolab query`."
+    )
+    source: SourceConfig | None = Field(
+        default=None, description="Light-curve source. Required for `astrolab run`."
+    )
+    transit: TransitConfig | None = Field(
+        default=None, description="Transit pipeline settings. Required for `astrolab run`."
+    )
     cache: CacheConfig = Field(default_factory=CacheConfig)
+
+    @model_validator(mode="after")
+    def _needs_something_to_do(self) -> AstrolabConfig:
+        if self.query is None and self.source is None:
+            raise ValueError(
+                "config must define either 'query' (for `astrolab query`) or 'source' "
+                "(for `astrolab run`)"
+            )
+        if self.source is not None and self.transit is None:
+            raise ValueError("a config with 'source' must also define 'transit'")
+        return self
 
     # -- loading ------------------------------------------------------------------------
 

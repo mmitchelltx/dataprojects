@@ -1,0 +1,60 @@
+# K2-3 (EPIC 201367065) -- the Phase 2 transit benchmark.
+#
+# Real K2 Campaign 1 photometry of an M0 dwarf hosting three transiting planets.
+# IMPORTANT: this light curve's chain of custody does not reach MAST. See
+# src/astrolab/validation/data/SOURCE.md for what that does and does not license.
+#
+# Published comparison values:
+#   K2-3 b  P = 10.0546535 d   (Kosiarek et al. 2019, AJ 157, 97)
+#   K2-3 c  P = 24.6454 d      (Crossfield et al. 2015 -- UNVERIFIED, see targets.py)
+#   K2-3 d  P = 44.5565 d      (Crossfield et al. 2015 -- UNVERIFIED)
+
+run:
+  name: k2-3-transit
+  description: Transit search, vetting, and fit for K2-3 on real K2 Campaign 1 photometry.
+  seed: 20260818
+  output_dir: outputs
+
+target:
+  name: K2-3 (EPIC 201367065)
+
+source:
+  kind: bundled_validation
+  # 'raw' rather than 'detrended': the detrended variant was processed by an undocumented
+  # external procedure, so a result computed from it would not be reproducible by us.
+  variant: raw
+  mission: K2
+  time_system: BKJD
+
+transit:
+  # K2-3 b's transit lasts about 2.5 hours. This sets the detrending window, so it is
+  # required rather than defaulted -- a window chosen without reference to the signal is
+  # exactly the depth-bias failure mode ADR-0003 exists to avoid.
+  expected_duration_hours: 2.4
+  catalogue_target: K2-3
+
+  detrend:
+    method: biweight
+    # 3 durations: measured on this dataset to cost 0.2% of transit depth, where 2 durations
+    # costs 95%. See estimate_depth_bias().
+    window_durations: 3.0
+
+  search:
+    min_period_days: 2.0
+    max_period_days: 30.0
+    sde_threshold: 8.0
+    max_candidates: 3
+    cross_check_bls: true
+
+  fit:
+    enabled: true
+    n_live: 300
+    window_durations: 3.0
+    # 29.4-minute cadence against a 2.5-hour transit: the exposure must be integrated over,
+    # or duration and impact parameter come out biased.
+    supersample: 7
+    sampler: rwalk
+    max_candidates_to_fit: 1
+
+cache:
+  enabled: true

@@ -119,8 +119,21 @@ class QualityReport:
         return any(f.flag == flag for f in self.flags)
 
     def extend(self, other: QualityReport) -> None:
-        """Absorb another report, as when a derived product inherits its inputs' caveats."""
-        self.flags.extend(other.flags)
+        """Absorb another report, as when a derived product inherits its inputs' caveats.
+
+        Duplicates are dropped. Flags propagate along every edge of the pipeline graph -- a
+        light curve's caveats reach the search, then each candidate's vetting, then each fit --
+        so without this the same reservation appears five or six times in a report and buries
+        the distinct ones. Two flags are the same if they share an identifier, a severity, and
+        a message; a flag with different context (a different measured S/N, say) is a genuinely
+        different observation and is kept.
+        """
+        seen = {(f.flag, f.severity, f.message) for f in self.flags}
+        for flag in other.flags:
+            key = (flag.flag, flag.severity, flag.message)
+            if key not in seen:
+                seen.add(key)
+                self.flags.append(flag)
 
     def to_list(self) -> list[dict[str, Any]]:
         return [f.to_dict() for f in self.flags]
