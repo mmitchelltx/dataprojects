@@ -11,6 +11,10 @@ appendix. It recovers K2-3 b at **0.6σ from the published period**, recovers K2
 correctly identifies a third detection as K2-3 d at its 1/2 harmonic rather than promoting it.
 See `docs/phase-2-status.md`.
 
+**Phase 3 (variable stars)** recovers the published period of LINEAR 11375941 (2.5801 h against
+~2.58 h) from sparse, heavily aliased ground-based photometry, and identifies LINEAR 14752041 as
+an eclipsing binary on physical grounds. See `docs/phase-3-status.md`.
+
 **Phase 1 (core + archives) built; live retrieval unverified.** The archive hosts are
 blocked by an egress policy in the environment this was developed in, so no query has actually
 reached MAST. Everything else — 135 tests, `mypy --strict`, the provenance and replay path — was
