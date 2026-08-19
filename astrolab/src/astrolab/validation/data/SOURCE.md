@@ -60,3 +60,52 @@ doi:10.3847/0004-637X/827/1/78):
 
 Values transcribed on 2026-08-18. Re-verify against the papers before quoting them; a
 transcription error in a benchmark is a benchmark that certifies the wrong answer.
+
+---
+
+# LINEAR variable star photometry
+
+## What these files are
+
+Real photometry from the **LINEAR** survey (Lincoln Near-Earth Asteroid Research), used as the
+Phase 3 variable-star benchmark.
+
+| File | Object | N | Baseline | Notes |
+|---|---|---|---|---|
+| `LINEAR_11375941.csv` | LINEAR 11375941 | 280 | 1962 d | Period ~2.58 h (VanderPlas 2018) |
+| `LINEAR_14752041.csv` | LINEAR 14752041 | 253 | 1967 d | Period not independently sourced |
+
+Columns: `t` (MJD), `mag` (unfiltered LINEAR magnitude), `magerr`.
+
+These are a deliberately different regime from the K2 transit data, and that is why they were
+chosen. Where K2 gives uniform 29.4-minute sampling over 80 continuous days, LINEAR gives 280
+points spread over 5.4 years with a **mean spacing of 7 days** and a strong nightly/annual
+observing pattern. Sparse, irregular, ground-based sampling is what makes period-finding hard:
+it produces a window function with a large 1-day spike, so aliases at
+``f_alias = f_true +/- n`` cycles/day are strong and a naive periodogram peak can easily be the
+wrong one. Any period-finding code that only ever ran on space-based data has not been tested.
+
+Unlike the bundled K2 data, these carry **measured per-point uncertainties** from the survey
+pipeline, so no error-estimation flag is raised.
+
+## Where they came from, and the limitation that creates
+
+Taken from the figure data of
+[`jakevdp/PracticalLombScargle`](https://github.com/jakevdp/PracticalLombScargle) (BSD-3-Clause
+for code), the reproduction repository for VanderPlas 2018, "Understanding the Lomb-Scargle
+Periodogram", ApJS 236, 16, doi:10.3847/1538-4365/aab766. The underlying LINEAR photometry is
+public survey data (Sesar et al. 2011, AJ 142, 190; Palaversa et al. 2013, AJ 146, 101).
+
+**The same limitation as the K2 data applies:** this is a derived extract, not the original
+survey data product, so it cannot be verified against the survey archive. Every product carries
+the `THIRD_PARTY_MIRROR` flag at CAUTION severity, and it propagates.
+
+## Published value for comparison
+
+VanderPlas 2018 identifies the period of LINEAR object 11375941 as **approximately 2.58 hours**
+(section 2, discussing Figures 1 and 2), citing Palaversa et al. 2013 for the object. The paper
+quotes two significant figures, which is what the benchmark tolerance reflects -- see
+`validation/targets.py`.
+
+No published period was found for LINEAR 14752041 from a retrievable source; it is used only as
+a second real light curve for exercising the code, never as a benchmark.

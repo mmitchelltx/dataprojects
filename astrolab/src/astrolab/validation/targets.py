@@ -203,5 +203,42 @@ GOLDEN_TARGETS: dict[str, GoldenTarget] = {
                 ),
             ),
         },
-    )
+    ),
+    "LINEAR-11375941": GoldenTarget(
+        name="LINEAR 11375941",
+        description=(
+            "Short-period variable in the LINEAR survey, used as the Phase 3 period-finding "
+            "benchmark. Deliberately a different data regime from the K2 transit target: 280 "
+            "points over 5.4 years at a mean spacing of 7 days, so the spectral window has a "
+            "power-0.99 spike at 1 cycle/day and aliasing -- not detection -- is the hard part."
+        ),
+        provenance_caveat=(
+            "Runs on a light curve extracted from a paper's figure data rather than the survey "
+            "archive. Regression benchmark, not a validated one."
+        ),
+        values={
+            "period": GoldenValue(
+                name="LINEAR 11375941 period",
+                expected=0.1075,
+                tolerance=0.00021,
+                unit="d",
+                source="VanderPlas 2018, ApJS 236, 16",
+                doi="10.3847/1538-4365/aab766",
+                last_verified="2026-08-19",
+                tolerance_rationale=(
+                    "The paper quotes the period as 'approximately 2.58 hours' -- three "
+                    "significant figures and no uncertainty. The tolerance is therefore half "
+                    "the last quoted digit (0.005 h = 0.000208 d), which is what agreement "
+                    "with a value quoted at that precision can mean. Quoting a tighter "
+                    "tolerance would be inventing precision the source does not claim."
+                ),
+                verification="sourced",
+                note=(
+                    "2.58 h = 0.1075 d. The pipeline returned 0.107505 d (2.5801 h) on "
+                    "2026-08-19. This is a period-finding benchmark, not a classification one: "
+                    "the paper identifies the period, not the variability class."
+                ),
+            ),
+        },
+    ),
 }

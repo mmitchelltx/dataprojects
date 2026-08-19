@@ -15,8 +15,18 @@ for fitting; the reference makes them unambiguous; and :meth:`absolute_time` con
 real BJD_TDB whenever an absolute answer is needed. The offset can never be lost, because it
 is a required field rather than a convention.
 
-Flux is stored normalised and dimensionless. Storing ppm invites a factor-of-10^6 error; see
-:mod:`astrolab.core.units`.
+Flux may be stored in one of two systems, and the distinction is not cosmetic:
+
+- **Normalised flux**, dimensionless, 1.0 = the out-of-transit level. Storing ppm invites a
+  factor-of-10^6 error; see :mod:`astrolab.core.units`.
+- **Magnitudes**, the logarithmic scale ground-based surveys publish. Brighter is *smaller*,
+  and a magnitude difference is a flux *ratio*, so an "amplitude" in magnitudes is not an
+  amplitude in flux and the mean of magnitudes is not the magnitude of the mean flux.
+
+Both are supported because both are what real data arrives as: a K2 transit comes as
+normalised flux, a LINEAR RR Lyrae comes as magnitudes. Code that cares must branch on
+:attr:`LightCurve.is_magnitude` rather than assume, and :meth:`LightCurve.to_relative_flux`
+converts when a flux-space operation is required.
 """
 
 from __future__ import annotations
@@ -30,7 +40,7 @@ from astropy.time import Time
 from astropy.units import Quantity
 
 from astrolab.core.quality import QualityReport
-from astrolab.core.units import ensure_quantity
+from astrolab.core.units import UnitBoundaryError, ensure_quantity
 
 __all__ = ["TIME_REFERENCES", "LightCurve"]
 
@@ -56,7 +66,8 @@ class LightCurve:
         absolute BJD values near 2.45e6 lose float precision where it matters for ingress and
         egress timing.
     flux
-        Dimensionless normalised flux (1.0 = the star's out-of-transit level).
+        Either dimensionless normalised flux (1.0 = the star's baseline level) or magnitudes.
+        See :attr:`is_magnitude`; the two are not interchangeable.
     flux_err
         Per-point uncertainty, same units as ``flux``. Required: Prime Directive 2 means a
         light curve without uncertainties is not a measurement.
@@ -81,8 +92,13 @@ class LightCurve:
 
     def __post_init__(self) -> None:
         self.time = _require(self.time, u.day, "time")
-        self.flux = _require(self.flux, u.dimensionless_unscaled, "flux")
-        self.flux_err = _require(self.flux_err, u.dimensionless_unscaled, "flux_err")
+        self.flux = _require_photometry(self.flux, "flux")
+        self.flux_err = _require_photometry(self.flux_err, "flux_err")
+        if self.flux.unit.physical_type != self.flux_err.unit.physical_type:
+            raise u.UnitConversionError(
+                f"flux is in {self.flux.unit} but flux_err is in {self.flux_err.unit}; "
+                f"an uncertainty must be in the same system as the value it qualifies"
+            )
 
         n = self.time.size
         if not (self.flux.size == n and self.flux_err.size == n):
@@ -145,6 +161,39 @@ class LightCurve:
         return self.epoch_ref + self.time
 
     @property
+    def is_magnitude(self) -> bool:
+        """Whether the photometry is in magnitudes rather than normalised flux."""
+        return bool(self.flux.unit.is_equivalent(u.mag))
+
+    def to_relative_flux(self) -> Self:
+        """Convert magnitudes to flux relative to the median, leaving flux curves unchanged.
+
+        Uses ``f/f0 = 10 ** (-0.4 * (m - m0))`` with ``m0`` the median magnitude, so the result
+        is normalised to 1.0 at the star's median brightness.
+
+        Uncertainties are propagated through the derivative of that relation
+        (``sigma_f/f = 0.4 ln(10) sigma_m``, about ``0.921 sigma_m``) rather than converted as
+        though they were magnitudes themselves -- an error bar is a local slope, not a value on
+        the scale.
+        """
+        if not self.is_magnitude:
+            return self
+        mag = self.flux.to_value(u.mag)
+        mag_err = self.flux_err.to_value(u.mag)
+        m0 = float(np.median(mag))
+        rel = 10.0 ** (-0.4 * (mag - m0))
+        rel_err = rel * 0.4 * np.log(10.0) * mag_err
+        return self._derived(
+            flux=rel * u.dimensionless_unscaled,
+            flux_err=rel_err * u.dimensionless_unscaled,
+            step={
+                "operation": "magnitude_to_relative_flux",
+                "reference_magnitude": m0,
+                "note": "flux normalised to the median magnitude; errors propagated by slope",
+            },
+        )
+
+    @property
     def time_system(self) -> str:
         """Name of the mission time system, if known ('BKJD', 'BTJD', ...)."""
         return str(self.meta.get("time_system", "unknown"))
@@ -156,7 +205,17 @@ class LightCurve:
 
         Records the divisor in provenance: a normalisation is a transformation of the data and
         must be recoverable, not silently baked in.
+
+        Refuses on magnitudes, where dividing is meaningless -- magnitudes are logarithmic, so
+        the corresponding operation is subtraction. Call :meth:`to_relative_flux` first if a
+        flux-space normalisation is what is wanted.
         """
+        if self.is_magnitude:
+            raise TypeError(
+                "cannot divide magnitudes by their median: the magnitude scale is "
+                "logarithmic, so normalisation means subtracting a reference magnitude, not "
+                "dividing. Use to_relative_flux() to move to flux space first."
+            )
         median = float(np.median(self.flux.value))
         if median == 0.0:
             raise ValueError("cannot normalise a light curve whose median flux is zero")
@@ -272,7 +331,10 @@ class LightCurve:
             "n_points": len(self),
             "baseline_days": float(self.baseline.value),
             "cadence_minutes": float(self.cadence.to(u.min).value),
-            "scatter_ppm": float(self.scatter.value * 1e6),
+            "photometry_system": "magnitude" if self.is_magnitude else "relative_flux",
+            "scatter": float(self.scatter.value),
+            "scatter_unit": "mag" if self.is_magnitude else "fraction",
+            "scatter_ppm": (None if self.is_magnitude else float(self.scatter.value * 1e6)),
             "time_start": float(self.time[0].value),
             "time_end": float(self.time[-1].value),
             "quality": self.quality.summary_line(),
@@ -280,11 +342,17 @@ class LightCurve:
         }
 
     def __repr__(self) -> str:
+        # ppm is meaningless on a logarithmic scale, so report magnitudes as magnitudes.
+        scatter = (
+            f"{self.scatter.value:.3f} mag"
+            if self.is_magnitude
+            else f"{self.scatter.value * 1e6:.0f} ppm"
+        )
         return (
             f"<LightCurve {self.meta.get('target', 'unknown')} "
             f"({self.meta.get('mission', '?')}): {len(self)} pts, "
-            f"{self.baseline.value:.1f} d, {self.cadence.to(u.min).value:.1f} min cadence, "
-            f"{self.scatter.value * 1e6:.0f} ppm>"
+            f"{self.baseline.value:.1f} d, median spacing "
+            f"{self.cadence.to(u.min).value:.1f} min, scatter {scatter}>"
         )
 
 
@@ -292,3 +360,23 @@ def _require(value: Any, unit: u.UnitBase, name: str) -> Quantity:
     q = ensure_quantity(value, unit, name=f"LightCurve.{name}")
     assert q is not None
     return np.atleast_1d(q)
+
+
+def _require_photometry(value: Any, name: str) -> Quantity:
+    """Accept either dimensionless flux or magnitudes, and nothing else.
+
+    Kept permissive between exactly two systems rather than one, because both are what real
+    surveys publish -- but not permissive about anything else, since a photometric series in
+    janskys or counts has a different meaning again and should be converted deliberately.
+    """
+    if not isinstance(value, Quantity):
+        raise UnitBoundaryError(
+            f"LightCurve.{name} must be an astropy Quantity in normalised flux "
+            f"(dimensionless) or magnitudes, got a bare {type(value).__name__}"
+        )
+    if value.unit.is_equivalent(u.mag) or value.unit.is_equivalent(u.dimensionless_unscaled):
+        return np.atleast_1d(value)
+    raise UnitBoundaryError(
+        f"LightCurve.{name} has units {value.unit}; expected normalised flux "
+        f"(dimensionless) or magnitudes"
+    )
